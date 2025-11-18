@@ -53,55 +53,130 @@ class Colors:
 
 def get_windows_net_info(local_ip):
     """
-    ROBUST Windows Network Info using ipconfig.
-    This method is more reliable than WMIC for extracting standard network info.
+    ENHANCED Windows Network Info using ipconfig with multiple robust parsing strategies.
+    Uses standard library only: subprocess, re, socket, struct.
+    Implements multiple fallback strategies for maximum reliability.
     """
     info = {'subnet': 'N/A', 'gateway': 'N/A'}
     
     try:
-        # Use ipconfig /all for reliable, text-based output.
-        # ipconfig is a core utility on all Windows systems.
         cmd = 'ipconfig /all'
-        # Using 'latin-1' or 'cp437' for decoding standard command output on Windows
         output = subprocess.check_output(cmd, shell=True).decode('latin-1', errors='ignore')
         
-        # 1. Find the block for the correct adapter (containing local_ip)
-        # Searches for an adapter section which contains the local IP address.
-        adapter_block_pattern = re.compile(
-            # Start of the line identifying the adapter's IPv4 address entry, 
-            # followed by the specific local_ip, and captures until the next adapter block or end of file.
-            r'(.+?(?:IPv4 Address|IP Address)\s*[\.\s:]+)\s*' + re.escape(local_ip).replace('.', r'\.') + r'(.+?)(?=\r?\n\r?\n|$)', 
-            re.DOTALL | re.IGNORECASE
-        )
-        match_block = adapter_block_pattern.search(output)
+        # STRATEGY 1: Advanced Regex with Flexible Whitespace
+        # This handles most common ipconfig output variations
+        adapter_info = _extract_adapter_block_strategy1(output, local_ip)
         
-        if match_block:
-            adapter_info = match_block.group(0)
+        if adapter_info:
+            # Try multiple regex patterns for Subnet Mask with increasing flexibility
+            subnet_patterns = [
+                r'Subnet\s+Mask\s*[\.:\s]*\s*([\d\.]+)',
+                r'(?:Subnet|Subnetmask)\s*[\.:\s]+\s*([\d\.]+)',
+                r'(?i:subnet[\s\-]*mask)\s*[\.:\s]*\s*([\d\.]+)',
+            ]
             
-            # 2. Subnet Mask
-            # Regex for standard English "Subnet Mask" followed by its IP
-            subnet_pattern = re.compile(
-                r'Subnet Mask\s*[\.\s:]+\s*([\d\.]+)', 
-                re.IGNORECASE
-            )
-            match_subnet = subnet_pattern.search(adapter_info)
-            if match_subnet:
-                info['subnet'] = match_subnet.group(1).strip()
-                
-            # 3. Default Gateway
-            # Regex for standard English "Default Gateway" followed by its IP
-            gateway_pattern = re.compile(
-                r'Default Gateway\s*[\.\s:]+\s*([\d\.]+)', 
-                re.IGNORECASE
-            )
-            match_gateway = gateway_pattern.search(adapter_info)
-            if match_gateway:
-                info['gateway'] = match_gateway.group(1).strip()
-
-    except Exception:
-        # Ignore exceptions gracefully
-        pass 
+            for pattern in subnet_patterns:
+                match = re.search(pattern, adapter_info, re.IGNORECASE)
+                if match:
+                    info['subnet'] = match.group(1).strip()
+                    break
+            
+            # Try multiple regex patterns for Default Gateway with increasing flexibility
+            gateway_patterns = [
+                r'Default\s+Gateway\s*[\.:\s]*\s*([\d\.]+)',
+                r'(?:Default|Def\.?)\s+Gateway\s*[\.:\s]+\s*([\d\.]+)',
+                r'(?i:default[\s\-]*gateway)\s*[\.:\s]*\s*([\d\.]+)',
+            ]
+            
+            for pattern in gateway_patterns:
+                match = re.search(pattern, adapter_info, re.IGNORECASE)
+                if match:
+                    info['gateway'] = match.group(1).strip()
+                    break
         
+        # STRATEGY 2: Line-by-Line State Machine Parser (Fallback)
+        # If Strategy 1 fails, use a more robust line-by-line approach
+        if info['subnet'] == 'N/A' or info['gateway'] == 'N/A':
+            fallback_info = _parse_ipconfig_line_by_line(output, local_ip)
+            if info['subnet'] == 'N/A':
+                info['subnet'] = fallback_info.get('subnet', 'N/A')
+            if info['gateway'] == 'N/A':
+                info['gateway'] = fallback_info.get('gateway', 'N/A')
+                
+    except Exception:
+        pass
+        
+    return info
+
+
+def _extract_adapter_block_strategy1(output, local_ip):
+    """
+    Extract the network adapter block containing the specified local_ip.
+    Returns the text block or None if not found.
+    """
+    escaped_ip = re.escape(local_ip)
+    
+    # Pattern 1: Look for adapter block with IPv4/IP Address containing our IP
+    # Captures from start of adapter to next double newline (adapter separator)
+    pattern = re.compile(
+        r'(?:Ethernet adapter|Wireless LAN adapter)[^\n]*\n'
+        r'((?:.*\n)*?'
+        r'.*?(?:IPv4 Address|IP Address)[^\n:]*[\.:\s]+[^\d]*' + escaped_ip + r'(?:\(Preferred\))?[^\n]*\n'
+        r'(?:.*\n)*?)'
+        r'(?=\r?\n\r?\n|\Z)',
+        re.IGNORECASE | re.MULTILINE
+    )
+    
+    match = pattern.search(output)
+    if match:
+        return match.group(1)
+    
+    # Pattern 2: Simpler fallback - find any block containing our IP
+    lines = output.split('\n')
+    for i, line in enumerate(lines):
+        if local_ip in line and ('IPv4' in line or 'IP Address' in line):
+            start = max(0, i - 10)
+            end = min(len(lines), i + 20)
+            return '\n'.join(lines[start:end])
+    
+    return None
+
+
+def _parse_ipconfig_line_by_line(output, local_ip):
+    """
+    Robust line-by-line parser for ipconfig output.
+    State machine approach: finds the adapter with local_ip, then extracts subnet/gateway.
+    """
+    info = {'subnet': 'N/A', 'gateway': 'N/A'}
+    lines = output.split('\n')
+    
+    found_ip = False
+    for i, line in enumerate(lines):
+        line_stripped = line.strip()
+        
+        # Check if we found our IP address
+        if local_ip in line and ('IPv4' in line or 'IP Address' in line):
+            found_ip = True
+            continue
+        
+        # Once we found our IP, look for subnet and gateway in nearby lines
+        if found_ip:
+            # Look for empty line (end of adapter block)
+            if not line_stripped:
+                break
+            
+            # Extract Subnet Mask - very flexible matching
+            if 'subnet' in line_stripped.lower() and 'mask' in line_stripped.lower():
+                ip_match = re.search(r'([\d]{1,3}\.[\d]{1,3}\.[\d]{1,3}\.[\d]{1,3})', line_stripped)
+                if ip_match:
+                    info['subnet'] = ip_match.group(1)
+            
+            # Extract Default Gateway - very flexible matching
+            if 'gateway' in line_stripped.lower():
+                ip_match = re.search(r'([\d]{1,3}\.[\d]{1,3}\.[\d]{1,3}\.[\d]{1,3})', line_stripped)
+                if ip_match:
+                    info['gateway'] = ip_match.group(1)
+    
     return info
 
 def get_linux_net_info(local_ip):
@@ -316,9 +391,186 @@ def print_report(data, analysis):
     print(f"{Colors.BOLD}FINAL DIAGNOSIS:{Colors.RESET} {status_color}{status_text}{Colors.RESET}")
     print(f"{Colors.CYAN}{'='*60}{Colors.RESET}\n")
 
+# --- Latency Trend Monitoring (DevOps Feature) ---
+
+HISTORY_FILE = 'network_history.json'
+HISTORY_CSV = 'network_history.csv'
+
+def load_history():
+    """Load historical latency data from JSON file"""
+    try:
+        with open(HISTORY_FILE, 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {'checks': []}
+
+def save_history(history):
+    """Save historical data to JSON file"""
+    try:
+        with open(HISTORY_FILE, 'w') as f:
+            json.dump(history, f, indent=2)
+    except Exception:
+        pass
+
+def save_to_csv(data):
+    """Append current check to CSV file for spreadsheet analysis"""
+    try:
+        file_exists = False
+        try:
+            with open(HISTORY_CSV, 'r'):
+                file_exists = True
+        except FileNotFoundError:
+            pass
+        
+        with open(HISTORY_CSV, 'a', newline='') as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(['Timestamp', 'Target', 'Status', 'Latency_ms', 'Details'])
+            
+            for check in data['tcp_checks']:
+                writer.writerow([
+                    data['timestamp'], 
+                    check['name'], 
+                    check['status'], 
+                    check['latency'], 
+                    check['details']
+                ])
+    except Exception:
+        pass
+
+def calculate_statistics(history, target_name):
+    """Calculate latency statistics for a specific target"""
+    latencies = []
+    for check in history.get('checks', []):
+        for tcp_check in check.get('tcp_checks', []):
+            if tcp_check['name'] == target_name and tcp_check['latency'] > 0:
+                latencies.append(tcp_check['latency'])
+    
+    if not latencies:
+        return None
+    
+    latencies.sort()
+    n = len(latencies)
+    
+    return {
+        'count': n,
+        'min': round(min(latencies), 2),
+        'max': round(max(latencies), 2),
+        'avg': round(sum(latencies) / n, 2),
+        'median': round(latencies[n // 2], 2),
+        'stddev': round((sum((x - sum(latencies)/n) ** 2 for x in latencies) / n) ** 0.5, 2)
+    }
+
+def detect_anomaly(current_latency, stats):
+    """Detect if current latency is anomalous (>2 standard deviations from mean)"""
+    if not stats or current_latency == 0:
+        return False, ""
+    
+    threshold = stats['avg'] + (2 * stats['stddev'])
+    if current_latency > threshold:
+        increase = round(((current_latency - stats['avg']) / stats['avg']) * 100, 1)
+        return True, f"ANOMALY: {increase}% above baseline"
+    return False, ""
+
+def print_monitoring_report(data, history):
+    """Print monitoring report with trend analysis"""
+    os_name = data.get('system', 'Unknown OS')
+    
+    print(f"\n{Colors.BOLD}Network Latency Monitoring Report ({os_name}){Colors.RESET}")
+    print(f"{Colors.CYAN}{'='*70}{Colors.RESET}")
+    print(f"Timestamp: {data['timestamp']}")
+    print(f"Historical Checks: {len(history.get('checks', []))}")
+    
+    print(f"\n{Colors.BOLD}Current Status & Trend Analysis{Colors.RESET}")
+    print(f"  {Colors.CYAN}{'Target':<20} {'Current':<12} {'Baseline':<12} {'Status':<30}{Colors.RESET}")
+    print(f"  {'-'*20} {'-'*12} {'-'*12} {'-'*30}")
+    
+    for check in data['tcp_checks']:
+        stats = calculate_statistics(history, check['name'])
+        
+        current_str = f"{check['latency']}ms" if check['latency'] else "FAIL"
+        baseline_str = f"{stats['avg']}ms" if stats else "N/A"
+        
+        is_anomaly, anomaly_msg = detect_anomaly(check['latency'], stats)
+        
+        if check['status'] != 'OK':
+            status_color = Colors.RED
+            status_msg = check['details']
+        elif is_anomaly:
+            status_color = Colors.YELLOW
+            status_msg = anomaly_msg
+        else:
+            status_color = Colors.GREEN
+            status_msg = "Normal"
+        
+        print(f"  {check['name']:<20} {current_str:<12} {baseline_str:<12} {status_color}{status_msg:<30}{Colors.RESET}")
+    
+    print(f"\n{Colors.BOLD}Statistical Summary{Colors.RESET}")
+    for check in data['tcp_checks']:
+        stats = calculate_statistics(history, check['name'])
+        if stats:
+            print(f"\n  {Colors.CYAN}{check['name']}{Colors.RESET}")
+            print(f"    Min/Avg/Max: {stats['min']}/{stats['avg']}/{stats['max']} ms")
+            print(f"    Std Dev: {stats['stddev']} ms | Samples: {stats['count']}")
+    
+    print(f"\n{Colors.CYAN}{'='*70}{Colors.RESET}")
+    print(f"Data saved to: {HISTORY_FILE} and {HISTORY_CSV}")
+    print(f"{Colors.CYAN}{'='*70}{Colors.RESET}\n")
+
+def monitoring_mode(interval=60):
+    """Continuous monitoring mode with configurable interval"""
+    print(f"{Colors.BOLD}Starting Network Latency Monitoring{Colors.RESET}")
+    print(f"Interval: {interval} seconds | Press Ctrl+C to stop\n")
+    
+    check_count = 0
+    try:
+        while True:
+            check_count += 1
+            print(f"{Colors.CYAN}[Check #{check_count}] {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Colors.RESET}")
+            
+            data = {
+                'timestamp': datetime.now().isoformat(),
+                'system': platform.system(),
+                'local_info': get_local_network_info(),
+                'tcp_checks': [],
+                'http_check': {}
+            }
+            
+            targets = [
+                ('Google DNS', '8.8.8.8', 53),
+                ('Restricted (YouTube)', 'www.youtube.com', 443)
+            ]
+            
+            for name, host, port in targets:
+                data['tcp_checks'].append(check_tcp_connection(name, host, port))
+            
+            history = load_history()
+            history['checks'].append(data)
+            
+            if len(history['checks']) > 1000:
+                history['checks'] = history['checks'][-1000:]
+            
+            save_history(history)
+            save_to_csv(data)
+            
+            print_monitoring_report(data, history)
+            
+            if check_count == 1:
+                print(f"{Colors.YELLOW}Building baseline... collect at least 5-10 samples for accurate anomaly detection{Colors.RESET}\n")
+            
+            time.sleep(interval)
+            
+    except KeyboardInterrupt:
+        print(f"\n{Colors.GREEN}Monitoring stopped. Total checks: {check_count}{Colors.RESET}")
+        print(f"Historical data saved to {HISTORY_FILE}")
+
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description='Network Checker - Professional DevOps Edition with Latency Monitoring'
+    )
     parser.add_argument('--json', action='store_true', help='Output raw JSON')
+    parser.add_argument('--monitor', action='store_true', help='Enable continuous latency monitoring')
+    parser.add_argument('--interval', type=int, default=60, help='Monitoring interval in seconds (default: 60)')
     args = parser.parse_args()
     
     # Auto-configure colors based on OS (Disabled on Windows for safety)
@@ -326,7 +578,14 @@ def main():
     
     if args.json:
         Colors.disable()
+    
+    # MONITORING MODE: Continuous checks with trend analysis
+    if args.monitor:
+        Colors.auto_configure()
+        monitoring_mode(args.interval)
+        return
         
+    # STANDARD MODE: Single check
     data = {
         'timestamp': datetime.now().isoformat(),
         'system': platform.system(),
