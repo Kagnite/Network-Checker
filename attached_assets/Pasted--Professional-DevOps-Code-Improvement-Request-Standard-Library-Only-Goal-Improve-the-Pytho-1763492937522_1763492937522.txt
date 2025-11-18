@@ -1,0 +1,75 @@
+## Professional DevOps Code Improvement Request - Standard Library Only
+
+**Goal:** Improve the Python function `get_windows_net_info` to reliably extract the **Subnet Mask** and **Default Gateway** on Windows systems, specifically addressing a persistent issue where the output frequently shows **"N/A"** for the Subnet Mask.
+
+**Crucial Constraint:** The solution MUST only use modules available in the **Python Standard Library** (e.g., `socket`, `subprocess`, `re`, `platform`, `io`, etc.). **DO NOT use any third-party libraries** that require installation (like `psutil`, `netifaces`, etc.).
+
+---
+
+### 1. Context and Current Code
+
+The user is running a network diagnostic script (`network_checker.py`) and is experiencing failure in the Windows-specific function responsible for local network configuration retrieval. The current implementation uses a regular expression approach on `ipconfig /all` output, which is known to be fragile.
+
+**Current (Problematic) Function:**
+
+```python
+def get_windows_net_info(local_ip):
+    """
+    ROBUST Windows Network Info using ipconfig.
+    This method is more reliable than WMIC for extracting standard network info.
+    """
+    info = {'subnet': 'N/A', 'gateway': 'N/A'}
+    
+    try:
+        # Use ipconfig /all for reliable, text-based output.
+        cmd = 'ipconfig /all'
+        # Using 'latin-1' for robust decoding of Windows command output
+        output = subprocess.check_output(cmd, shell=True).decode('latin-1', errors='ignore')
+        
+        # 1. Find the block for the correct adapter (containing local_ip)
+        adapter_block_pattern = re.compile(
+            r'(.+?(?:IPv4 Address|IP Address)\s*[\.\s:]+)\s*' + re.escape(local_ip).replace('.', r'\.') + r'(.+?)(?=\r?\n\r?\n|$)', 
+            re.DOTALL | re.IGNORECASE
+        )
+        match_block = adapter_block_pattern.search(output)
+        
+        if match_block:
+            adapter_info = match_block.group(0)
+            
+            # 2. Subnet Mask
+            subnet_pattern = re.compile(
+                r'Subnet Mask\s*[\.\s:]+\s*([\d\.]+)', 
+                re.IGNORECASE
+            )
+            match_subnet = subnet_pattern.search(adapter_info)
+            if match_subnet:
+                info['subnet'] = match_subnet.group(1).strip()
+                
+            # 3. Default Gateway
+            gateway_pattern = re.compile(
+                r'Default Gateway\s*[\.\s:]+\s*([\d\.]+)', 
+                re.IGNORECASE
+            )
+            match_gateway = gateway_pattern.search(adapter_info)
+            if match_gateway:
+                info['gateway'] = match_gateway.group(1).strip()
+
+    except Exception:
+        # Ignore exceptions gracefully
+        pass 
+        
+    return info
+
+2. Detailed Problem Analysis & Requirements
+
+    Issue: The subnet field consistently resolves to N/A because the current Regular Expression (Regex) for Subnet Mask is too strict and fails to match variations in spacing and separators in the ipconfig /all output.
+
+    Required Improvement (Regex Robustness): The regex for Subnet Mask and Default Gateway must be significantly improved to handle common variations (multiple spaces, tabs, different separators) between the field name (e.g., "Subnet Mask") and the IP address value.
+
+        Action: Enhance the regex to use more generic whitespace matching (\s+) and handle optional separators robustly to ensure the IP value is always captured when the English field name is present.
+
+    Core Constraint: The revised function MUST ONLY use the Python Standard Library.
+
+3. Action Requested
+
+Provide the complete, revised get_windows_net_info function. The solution must be robust, reliable, and strictly adhere to the "Standard Library Only" constraint.
