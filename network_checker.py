@@ -544,7 +544,14 @@ def monitoring_mode(interval=60):
             for name, host, port in targets:
                 data['tcp_checks'].append(check_tcp_connection(name, host, port))
             
+            # Load historical data BEFORE adding current sample
+            # This ensures anomaly detection uses prior baseline, not including current spike
             history = load_history()
+            
+            # Calculate statistics and detect anomalies using PRIOR history only
+            print_monitoring_report(data, history)
+            
+            # NOW append the current data to history for future baseline calculations
             history['checks'].append(data)
             
             if len(history['checks']) > 1000:
@@ -552,8 +559,6 @@ def monitoring_mode(interval=60):
             
             save_history(history)
             save_to_csv(data)
-            
-            print_monitoring_report(data, history)
             
             if check_count == 1:
                 print(f"{Colors.YELLOW}Building baseline... collect at least 5-10 samples for accurate anomaly detection{Colors.RESET}\n")
