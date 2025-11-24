@@ -59,7 +59,7 @@ network_history.csv — Raw logs for analysis (Excel, Sheets, etc.)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Maintenance](https://img.shields.io/badge/maintained-yes-brightgreen)
-
+.
 # NetProbe v1.0 - Professional Network Diagnostic Utility
 ...
 
