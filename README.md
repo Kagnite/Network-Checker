@@ -55,7 +55,6 @@ network_history.json — Baseline history data
 
 network_history.csv — Raw logs for analysis (Excel, Sheets, etc.)
 
-
 ![Python Version](https://img.shields.io/badge/python-3.6%2B-blue?logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 ![License](https://img.shields.io/badge/license-MIT-green)
