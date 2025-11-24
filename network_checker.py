@@ -355,7 +355,7 @@ def print_report(data, analysis):
     os_name = data.get('system', 'Unknown OS')
     
     # Print Header with OS name
-    print(f"\n{Colors.BOLD}DevOps Network Diagnostics - Professional Edition ({os_name}){Colors.RESET}")
+    print(f"\n{Colors.BOLD}NetProbe v1.0 - Network Diagnostic Utility ({os_name}){Colors.RESET}")
     print(f"{Colors.CYAN}{'='*60}{Colors.RESET}")
     
     # Local Info
@@ -571,7 +571,7 @@ def monitoring_mode(interval=60):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Network Checker - Professional DevOps Edition with Latency Monitoring'
+        description='NetProbe v1.0 - Network Diagnostic Utility'
     )
     parser.add_argument('--json', action='store_true', help='Output raw JSON')
     parser.add_argument('--monitor', action='store_true', help='Enable continuous latency monitoring')
@@ -622,3 +622,4 @@ if __name__ == '__main__':
         main()
     except KeyboardInterrupt:
         sys.exit(0)
+        
