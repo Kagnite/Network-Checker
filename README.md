@@ -49,6 +49,7 @@ Stop monitoring using Ctrl + C.
 ```
 python network_checker.py --json
 ```
+
 📊 Output Files (Monitoring Mode)
 
 network_history.json — Baseline history data

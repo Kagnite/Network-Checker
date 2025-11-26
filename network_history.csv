@@ -1,0 +1,11 @@
+Timestamp,Target,Status,Latency_ms,Details
+2025-11-24T22:23:21.273574,Google DNS,OK,0.17,Connected
+2025-11-24T22:23:21.273574,Restricted (YouTube),FAIL,0,Refused (Service Down/Blocked)
+2025-11-24T22:24:10.980339,Google DNS,OK,0.18,Connected
+2025-11-24T22:24:10.980339,Restricted (YouTube),FAIL,0,Refused (Service Down/Blocked)
+2025-11-24T22:25:13.402779,Google DNS,OK,0.28,Connected
+2025-11-24T22:25:13.402779,Restricted (YouTube),FAIL,0,Refused (Service Down/Blocked)
+2025-11-24T22:26:15.970287,Google DNS,OK,0.23,Connected
+2025-11-24T22:26:15.970287,Restricted (YouTube),FAIL,0,Refused (Service Down/Blocked)
+2025-11-24T22:27:18.955110,Google DNS,OK,0.23,Connected
+2025-11-24T22:27:18.955110,Restricted (YouTube),FAIL,0,Refused (Service Down/Blocked)
